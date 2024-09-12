@@ -140,18 +140,91 @@ print(f"Logistic Regression Test Accuracy: {proxy_test_accuracy:.4f}")
 # 1.4
 # 1.4.1
 # your code here
+def process_data(X_train, feature_1, feature_2=None):
+    """
+    process data: Set all predictors to their means/modes except for special feature
+    parameter:
+    X_train: original train data
+    feature_1: 'SCHED_DEP_HOUR'
+    feature_2: second feature should be kept for real(optional)
+    return:
+    X_processed: the data processed
+    """
+    # process the original data, and get the train data
+    # set predictors to their modes, there will not one-hot-encoded first
+    X_processed = X_train.copy()
+    non_one_hot_cols = ['ARRIVAL_DELAY', 'DISTANCE', 'SCHEDULED_TIME', 'MONTH', 'SCHED_DEP_HOUR', 'SCHED_ARR_HOUR',
+                        'FLIGHT_COUNT', 'DAY_OF_WEEK']
+    # deal with the numerical data
+    if feature_2 is not None:
+        numeric_cols = X_train.select_dtypes(include=[np.number]).columns.difference([feature_1, feature_2])
+    else:
+        numeric_cols = X_train.select_dtypes(include=[np.number]).columns.difference([feature_1])
 
-# 1.4.1要写解释
+    X_processed[numeric_cols] = X_train[numeric_cols].mean()
+
+    # deal with the category data(one-hot-encoded)
+    one_hot_cols = X_train.columns.difference(non_one_hot_cols)
+    X_processed[one_hot_cols] = X_train[one_hot_cols].mode().iloc[0]
+
+    return X_processed
+
+def predict_and_plot(model, X_processed, feature_1, feature_2=None):
+    """
+    Using NN model to predict and plot the predicted probabilities vs features
+    parameter::
+    model: NN model
+    X_processed: the data processed
+    feature_1: the first feature kept true value
+    feature_2: the second feature kept true value
+    """
+    # predict
+    predicted_pro = model.predict(X_processed)
+
+    # plot
+    if feature_2:
+        plt.scatter(X_processed[feature_1], X_processed[feature_2], c=predicted_pro, cmap='viridis',
+                    alpha=0.75)
+        plt.colorbar(label='Predicted Probability of Delay')
+        plt.xlabel(feature_1)
+        plt.ylabel(feature_2)
+        plt.title(f'Predicted Delay Probability vs. {feature_1} and {feature_2}')
+        plt.show()
+    else:
+        plt.scatter(X_processed[feature_1], predicted_pro, c=predicted_pro, cmap='viridis',
+                    alpha=0.75)
+        plt.colorbar(label='Predicted Probability of Delay')
+        plt.xlabel(feature_1)
+        plt.ylabel('Predicted Probability of Delay')
+        plt.title(f'Predicted Delay Probability vs. {feature_1}')
+        plt.show()
+
+X_processed_1 = process_data(X_train, 'SCHED_DEP_HOUR')
+predict_and_plot(NN_model, X_processed_1, 'SCHED_DEP_HOUR')
+
+解释
+The chart shows that as the scheduled departure time (SCHED_DEP_HOUR) increases, the probability of a flight being delayed decreases. 
+The probability of delays is higher from the midnight to early morning hours, while the probability of delays decreases significantly towards the afternoon and evening hours
+
 # 1.4.2
 # your code here
+X_processed_2 = process_data(X_train, 'SCHED_DEP_HOUR', 'FLIGHT_COUNT')
+predict_and_plot(NN_model, X_processed_2, 'SCHED_DEP_HOUR', 'FLIGHT_COUNT')
 
 # 1.4.3
 # your code here
+X_processed_3 = process_data(X_train, 'SCHED_DEP_HOUR', 'SCHED_ARR_HOUR')
+predict_and_plot(NN_model, X_processed_3, 'SCHED_DEP_HOUR', 'SCHED_ARR_HOUR')
 
 # 1.4.4
 # your code here
+X_processed_4 = process_data(X_train, 'SCHED_DEP_HOUR', 'DISTANCE')
+predict_and_plot(NN_model, X_processed_4, 'SCHED_DEP_HOUR', 'DISTANCE')
 
-# 1.4.4要写解释
+解释
+1. Flight delays are related to departure time and number of flights: the probability of delay is higher in the morning, especially when there are more flights, the probability of delay increases significantly. 
+2. When departure and arrival times are both early (such as early morning to morning), the probability of delay is higher; and when departure and arrival times are later, the probability of delay decreases. 
+3. The probability of delay varies with departure time, but is less correlated with distance
 
 # 1.5
 def progressbar(n_step, n_total):
