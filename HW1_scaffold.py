@@ -27,6 +27,7 @@ from tensorflow import keras
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout
 from tensorflow.keras.callbacks import EarlyStopping
+import zipfile
 
 %matplotlib inline
 # 1.1
@@ -40,6 +41,8 @@ df.drop(rows_to_drop, inplace=True)
 # Create a variable DELAY_OR_NOT that denotes whether ARRIVAL_DELAY is greater than or equal to 15 minutes
 # if delayed, 1; else, 0
 df['DELAY_OR_NOT'] = np.where(df['ARRIVAL_DELAY'] >= 15, 1, 0)
+# Drop ARRIVAL_DELAY, because it has been label
+df.drop('ARRIVAL_DELAY', axis=1, inplace=True)
 
 # 1.1.2
 # your code here
@@ -83,11 +86,11 @@ print(f"y_test : {y_test.shape}")
 # build your NN 
 # your code here
 NN_model = Sequential(name="NN_model")
-NN_model.add(Dense(200, activation="relu", kernel_regularizer=keras.regularizers.l1_l2(l1=0.001, l2=0.001),
+NN_model.add(Dense(200, activation="relu", kernel_regularizer=keras.regularizers.l1_l2(l1=0.002, l2=0.002),
                    input_shape=(X_train_scaled.shape[1],)))
-NN_model.add(Dropout(0.2))
-NN_model.add(Dense(200,kernel_regularizer=keras.regularizers.l1_l2(l1=0.001, l2=0.001), activation="relu"))
-NN_model.add(Dropout(0.2))
+NN_model.add(Dropout(0.3))
+NN_model.add(Dense(200,kernel_regularizer=keras.regularizers.l1_l2(l1=0.002, l2=0.002), activation="relu"))
+NN_model.add(Dropout(0.3))
 NN_model.add(Dense(1, activation="sigmoid"))
 
 
@@ -153,7 +156,7 @@ def process_data(X_train, feature_1, feature_2=None):
     # process the original data, and get the train data
     # set predictors to their modes, there will not one-hot-encoded first
     X_processed = X_train.copy()
-    non_one_hot_cols = ['ARRIVAL_DELAY', 'DISTANCE', 'SCHEDULED_TIME', 'MONTH', 'SCHED_DEP_HOUR', 'SCHED_ARR_HOUR',
+    non_one_hot_cols = ['DISTANCE', 'SCHEDULED_TIME', 'MONTH', 'SCHED_DEP_HOUR', 'SCHED_ARR_HOUR',
                         'FLIGHT_COUNT', 'DAY_OF_WEEK']
     # deal with the numerical data
     if feature_2 is not None:
@@ -167,7 +170,14 @@ def process_data(X_train, feature_1, feature_2=None):
     one_hot_cols = X_train.columns.difference(non_one_hot_cols)
     X_processed[one_hot_cols] = X_train[one_hot_cols].mode().iloc[0]
 
-    return X_processed
+
+    # Keep the original values of feature_1 (and feature_2 if applicable) for plotting
+    X_original = X_processed.copy()
+
+    # Standardize the data
+    X_processed = StandardScaler().fit_transform(X_processed)
+
+    return X_processed, X_original
 
 def predict_and_plot(model, X_processed, feature_1, feature_2=None):
     """
@@ -199,8 +209,8 @@ def predict_and_plot(model, X_processed, feature_1, feature_2=None):
         plt.title(f'Predicted Delay Probability vs. {feature_1}')
         plt.show()
 
-X_processed_1 = process_data(X_train, 'SCHED_DEP_HOUR')
-predict_and_plot(NN_model, X_processed_1, 'SCHED_DEP_HOUR')
+X_processed_1, X_original_1 = process_data(X_train, 'SCHED_DEP_HOUR')
+predict_and_plot(NN_model, X_processed_1, X_original_1, 'SCHED_DEP_HOUR')
 
 解释
 The chart shows that as the scheduled departure time (SCHED_DEP_HOUR) increases, the probability of a flight being delayed decreases. 
@@ -208,18 +218,18 @@ The probability of delays is higher from the midnight to early morning hours, wh
 
 # 1.4.2
 # your code here
-X_processed_2 = process_data(X_train, 'SCHED_DEP_HOUR', 'FLIGHT_COUNT')
-predict_and_plot(NN_model, X_processed_2, 'SCHED_DEP_HOUR', 'FLIGHT_COUNT')
+X_processed_2, X_original_2 = process_data(X_train, 'SCHED_DEP_HOUR', 'FLIGHT_COUNT')
+predict_and_plot(NN_model, X_processed_2,X_original_2, 'SCHED_DEP_HOUR', 'FLIGHT_COUNT')
 
 # 1.4.3
 # your code here
-X_processed_3 = process_data(X_train, 'SCHED_DEP_HOUR', 'SCHED_ARR_HOUR')
-predict_and_plot(NN_model, X_processed_3, 'SCHED_DEP_HOUR', 'SCHED_ARR_HOUR')
+X_processed_3, X_original_3 = process_data(X_train, 'SCHED_DEP_HOUR', 'SCHED_ARR_HOUR')
+predict_and_plot(NN_model, X_processed_3, X_original_3, 'SCHED_DEP_HOUR', 'SCHED_ARR_HOUR')
 
 # 1.4.4
 # your code here
-X_processed_4 = process_data(X_train, 'SCHED_DEP_HOUR', 'DISTANCE')
-predict_and_plot(NN_model, X_processed_4, 'SCHED_DEP_HOUR', 'DISTANCE')
+X_processed_4, X_original_4 = process_data(X_train, 'SCHED_DEP_HOUR', 'DISTANCE')
+predict_and_plot(NN_model, X_processed_4, X_original_4, 'SCHED_DEP_HOUR', 'DISTANCE')
 
 解释
 1. Flight delays are related to departure time and number of flights: the probability of delay is higher in the morning, especially when there are more flights, the probability of delay increases significantly. 
@@ -278,11 +288,11 @@ for i in range(bootstraps):
     X_bootstrap, y_bootstrap = resample(X_train_scaled, y_train, random_state=i)
     # 创建新的神经网络模型（和原来的结构一样）
     NN_model2 = Sequential(name="NN_model2")
-    NN_model2.add(Dense(200, activation="relu", kernel_regularizer=keras.regularizers.l1_l2(l1=0.001, l2=0.001),
+    NN_model2.add(Dense(200, activation="relu", kernel_regularizer=keras.regularizers.l1_l2(l1=0.002, l2=0.002),
                    input_shape=(X_train_scaled.shape[1],)))
-    NN_model2.add(Dropout(0.2))
-    NN_model2.add(Dense(200,kernel_regularizer=keras.regularizers.l1_l2(l1=0.001, l2=0.001), activation="relu"))
-    NN_model2.add(Dropout(0.2))
+    NN_model2.add(Dropout(0.3))
+    NN_model2.add(Dense(200,kernel_regularizer=keras.regularizers.l1_l2(l1=0.002, l2=0.002), activation="relu"))
+    NN_model2.add(Dropout(0.3))
     NN_model2.add(Dense(1, activation="sigmoid"))
     early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
     NN_model2.compile(optimizer=keras.optimizers.Adam(), loss='binary_crossentropy', metrics=['accuracy'])
@@ -383,7 +393,9 @@ Conversely, as the PPR threshold increases, the model makes predictions on more 
 # 2.1
 # your code here
 #Load the dataset
-train_data = pd.read_csv('kmnist_train.csv')    
+with zipfile.ZipFile('data/Homework 1 - Homework 1 Data.zip', 'r') as zip_ref:
+    with zip_ref.open('HW1-Data/kmnist_train.csv') as file:
+        train_data = pd.read_csv(file)    
 
 #Separate images and lables
 images = train_data.iloc[:, :-1].values     
@@ -488,7 +500,9 @@ plt.show()
 # 2.3.4
 # your code here
 # Evaluate the regularized model on test set
-test_data = pd.read_csv('kmnist_test.csv')
+with zipfile.ZipFile('data/Homework 1 - Homework 1 Data.zip', 'r') as zip_ref:
+    with zip_ref.open('HW1-Data/kmnist_test.csv') as file:
+        test_data = pd.read_csv(file) 
 x_test = test_data.iloc[:, :-1].values
 y_test = test_data.iloc[:, -1].values
 
