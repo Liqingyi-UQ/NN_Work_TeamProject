@@ -267,33 +267,230 @@ def progressbar(n_step, n_total):
 %%time
 # Bootstrap and train your networks and get predictions on fixed X test
 # your code here
+# the number of bootstrap
+bootstraps=50
+# 存储每次Bootstrap的模型预测
+test_predictions = np.zeros((bootstraps, X_test_scaled.shape[0]))
 
+for i in range(bootstraps):
+    #跟踪bootstrap进度
+    progressbar(i, bootstraps)
+    X_bootstrap, y_bootstrap = resample(X_train_scaled, y_train, random_state=i)
+    # 创建新的神经网络模型（和原来的结构一样）
+    NN_model2 = Sequential(name="NN_model2")
+    NN_model2.add(Dense(200, activation="relu", kernel_regularizer=keras.regularizers.l1_l2(l1=0.001, l2=0.001),
+                   input_shape=(X_train_scaled.shape[1],)))
+    NN_model2.add(Dropout(0.2))
+    NN_model2.add(Dense(200,kernel_regularizer=keras.regularizers.l1_l2(l1=0.001, l2=0.001), activation="relu"))
+    NN_model2.add(Dropout(0.2))
+    NN_model2.add(Dense(1, activation="sigmoid"))
+    early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+    NN_model2.compile(optimizer=keras.optimizers.Adam(), loss='binary_crossentropy', metrics=['accuracy'])
+    NN_model2.fit(X_bootstrap, y_bootstrap, batch_size=64, epochs=50, validation_split=0.2,
+                       callbacks=[early_stopping])
+    # 预测测试集并存储结果
+    test_predictions[i, :] = NN_model2.predict(X_test_scaled).flatten()
+#跟踪结束
+progressbar(bootstraps, bootstraps)
+#随机选择八个test样本
+selected = np.random.choice(X_test_scaled.shape[0], size=8, replace=False)
 
 # generate your plot
 # your code here
+#绘制预测概率分布
+fig, axes = plt.subplots(nrows=2, ncols=4, figsize=(20, 10), constrained_layout=True)
+
+for i, ax in enumerate(axes.flatten()):
+    test_index = selected[i]
+    sns.histplot(test_predictions[:, test_index], kde=True, ax=ax)
+    ax.set_title(f"Test observation #{test_index}\nTrue Class: {y_test.iloc[test_index]}")
+    ax.set_xlabel("Predicted Probability")
+    ax.set_ylabel("Density")
+
+    # 计算95%置信区间
+    lower_bound = np.percentile(test_predictions[:, test_index], 2.5)
+    upper_bound = np.percentile(test_predictions[:, test_index], 97.5)
+
+    # 显示95%置信区间
+    ax.axvline(x=lower_bound, color='red', linestyle='--')
+    ax.axvline(x=upper_bound, color='red', linestyle='--')
+    ax.text(x=lower_bound, y=ax.get_ylim()[1]*0.7, s=f"2.5%: {lower_bound:.2f}", color='red')
+    ax.text(x=upper_bound, y=ax.get_ylim()[1]*0.7, s=f"97.5%: {upper_bound:.2f}", color='red')
+
+plt.suptitle('Distribution of Predicted Probabilities with 95% Confidence Intervals')
+plt.show()
 
 # 1.5此处要写解释
+
 # 1.6
 # your code here
+# 计算每个测试数据的平均预测概率
+mean_test_predictions = np.mean(test_predictions, axis=0)
 
+# 计算后验预测比率（PPR）
+PPR_values = np.mean(test_predictions > 0.5, axis=0)
+
+# 正确分类的测试数据数量
+n_correct = np.sum((mean_test_predictions > 0.5) == y_test)
+
+# 初始模型的准确性
+initial_test_accuracy = n_correct / len(y_test)
+print(f"Initial Test Accuracy: {initial_test_accuracy:.4f}")
+
+thresholds = np.linspace(0, 0.5, 51)
+accuracies = []
+proportions_predicted = []
+
+# 对于每个阈值，计算弃权模型的准确性和预测比例
+for threshold in thresholds:
+    # 选择PPR小于等于阈值的测试数据点
+    mask = PPR_values <= threshold
+    valid_predictions = mean_test_predictions[mask]
+    valid_y_test = y_test[mask]
+
+    # 计算准确性
+    valid_n_correct = np.sum((valid_predictions > 0.5) == valid_y_test)
+    valid_accuracy = valid_n_correct / len(valid_y_test) if len(valid_y_test) > 0 else None
+    #计算比例
+    proportion_predicted = np.sum(mask) / len(y_test)
+    #存储数据
+    accuracies.append(valid_accuracy)
+    proportions_predicted.append(proportion_predicted)
+
+# 绘制测试准确性变化图
+plt.figure(figsize=(10, 6))
+plt.plot(thresholds, accuracies, label='Test Accuracy')
+plt.xlabel('PPR Threshold')
+plt.ylabel('Test Accuracy')
+plt.title('Test Accuracy vs. PPR Threshold')
+plt.legend()
+plt.show()
+
+# 绘制预测比例变化图
+plt.figure(figsize=(10, 6))
+plt.plot(thresholds, proportions_predicted, label='Proportion Predicted', color='orange')
+plt.xlabel('PPR Threshold')
+plt.ylabel('Proportion of Predictions Made')
+plt.title('Proportion of Predictions Made and PPR Threshold')
+plt.legend()
+plt.show()
+
+# 我所看到的：I found that as the PPR threshold decreases, i have to balance between the accuracy of predictions and the number of points predicted. 
+lower PPR thresholds typically improves the accuracy of predictions but also means giving up making predictions for certain test observations. 
+Conversely, as the PPR threshold increases, the model makes predictions on more observation, but these predictions are less accurate.
 # 1.6此处要写解释
 
 # 2.1
-# your code here 
+# your code here
+#Load the dataset
+train_data = pd.read_csv('kmnist_train.csv')    
+
+#Separate images and lables
+images = train_data.iloc[:, :-1].values     
+labels = train_data.iloc[:, -1].values      
+
+# Select the first '0' and '1' sample for visualization
+image_0 = images[labels == 0][0].reshape(28, 28)    
+image_1 = images[labels == 1][0].reshape(28, 28)   
+
+# Display a handwritten 0 and a handwritten 1 images
+plt.figure(figsize=(6, 3))
+plt.subplot(1, 2, 1)
+plt.title("Handwritten 0")
+plt.imshow(image_0, cmap='gray')
+plt.axis('off')
+plt.subplot(1, 2, 2)
+plt.title("Handwritten 1")
+plt.imshow(image_1, cmap='gray')
+plt.axis('off')
+plt.show()
 
 # 2.2
 # your code here
+# Split data into training and validation sets
+X1_train, X1_val, Y1_train, Y1_val = train_test_split(images, labels, test_size=0.3, random_state=42)
+
+# Build the overfitting model
+model_overfit = tf.keras.Sequential([
+    tf.keras.layers.Dense(100, activation='relu', input_shape=(784,)),
+    tf.keras.layers.Dense(100, activation='relu'),
+    tf.keras.layers.Dense(100, activation='relu'),
+    tf.keras.layers.Dense(1, activation='sigmoid')
+])    
+
+# Compile the model
+model_overfit.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+
+# Train the model
+history_overfit = model_overfit.fit(X1_train, Y1_train, epochs=2000, batch_size=128, validation_data=(X1_val, Y1_val))
+
+model_overfit.summary()
+
+# Plot the training and validation accuracy
+plt.plot(history_overfit.history['accuracy'], label='Training Accuracy')
+plt.plot(history_overfit.history['val_accuracy'], label='Validation Accuracy')
+plt.xlabel('Epochs')
+plt.ylabel('Accuracy')
+plt.legend()
+plt.title('Overfitting Model: Training vs Validation Accuracy')
+plt.show()
 
 # 2.2此处要写解释
 
 # 2.3.1
 # your code here
+# Build a regularized ANN with dropout & L2 regularization
+model = tf.keras.Sequential([    
+    tf.keras.layers.Dense(100, activation='relu', input_shape=(784,), kernel_regularizer=tf.keras.regularizers.l2(0.005)),
+    tf.keras.layers.Dropout(0.2),
+    tf.keras.layers.Dense(100, activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.005)),
+    tf.keras.layers.Dropout(0.2),
+    tf.keras.layers.Dense(100, activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.005)),
+    tf.keras.layers.Dropout(0.2),
+    tf.keras.layers.Dense(1, activation='sigmoid')
+])
+
+model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+
+# Define early stopping callback to avoid the overfitting
+callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss',patience=60,restore_best_weights=True, verbose=1)
+
+# Train the regularized model
+history = model.fit(X1_train, Y1_train, batch_size=128, epochs=2000, validation_data=(X1_val, Y1_val), callbacks=[callback])
+
+# Model summary
+model.summary()
+
+# Training and validation accuracy and loss
+final_train_acc = history.history['accuracy'][-1]
+final_val_acc = history.history['val_accuracy'][-1]
+final_train_loss = history.history['loss'][-1]
+final_val_loss = history.history['val_loss'][-1]
 
 # 2.3.2
 # your code here
+# Difference between the training and validation accuracies and losses
+print("Difference between training and validation accuracies:", final_train_acc - final_val_acc)
+print("Difference between training and validation loss:", final_train_loss - final_val_loss)
+
 
 # 2.3.3
 # your code here
+# Plot the training accuracy and validation accuracy
+plt.plot(history.history['accuracy'], label='Training Accuracy')
+plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+plt.xlabel('Epochs')
+plt.ylabel('Accuracy')
+plt.legend()
+plt.title('Regularized Model: Training vs Validation Accuracy')
+plt.show()
 
 # 2.3.4
 # your code here
+# Evaluate the regularized model on test set
+test_data = pd.read_csv('kmnist_test.csv')
+x_test = test_data.iloc[:, :-1].values
+y_test = test_data.iloc[:, -1].values
+
+test_loss, test_accuracy = model.evaluate(x_test, y_test)
+print("Test accuracy:", test_accuracy)
